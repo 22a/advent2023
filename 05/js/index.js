@@ -2,26 +2,25 @@ const fs = require('fs')
 
 const chunks = fs.readFileSync('../input.txt', 'utf8').trim().split('\n\n')
 const seeds = chunks.shift().split(": ")[1].trim().split(' ').map(Number)
-const mappings = chunks.reduce((acc, chunk) => {
-  const [name, value] = chunk.split(" map:\n")
-  const mapping = value.trim().split('\n').map((map) => map.split(' ').map(Number));
-  return { ...acc, [name]: mapping }
-}, {});
+const layerMappings = chunks.map((chunk) => {
+  const [_name, value] = chunk.split(" map:\n")
+  const layerMapping = value.trim().split('\n')
+    .map((mapping) => mapping.split(' ').map(Number))
+    .map((range) => ({
+      sourceStart: range[1],
+      sourceEnd: range[1] + range[2],
+      destStart: range[0],
+      destEnd: range[0] + range[2],
+    }))
+    .sort((a, b) => a.sourceStart - b.sourceStart)
+  return layerMapping;
+});
 
-const layers = Object.values(mappings).map(mapping => mapping.map((range) => ({
-  sourceStart: range[1],
-  sourceEnd: range[1] + range[2],
-  destStart: range[0],
-  destEnd: range[0] + range[2],
-}))
-  .sort((a, b) => a.sourceStart - b.sourceStart)
-)
-
-const lookup = (id, map) => {
-  for (const [dest, source, length] of map) {
-    if (id >= source && id <= source + length) {
-      const offset = id - source;
-      return dest + offset
+const lookup = (id, layerMap) => {
+  for (const { sourceStart, sourceEnd, destStart } of layerMap) {
+    if (id >= sourceStart && id <= sourceEnd) {
+      const offset = id - sourceStart;
+      return destStart + offset
     }
   }
   return id
@@ -29,26 +28,20 @@ const lookup = (id, map) => {
 
 const seedToLocation = (seed) => {
   let scratch = seed;
-  for (const map of Object.values(mappings)) {
-    scratch = lookup(scratch, map)
+  for (const layerMap of layerMappings) {
+    scratch = lookup(scratch, layerMap)
   }
   return scratch;
 }
 
 console.log('Part 1:', Math.min(...seeds.map(seedToLocation)))
 
-
 const destinationRanges = (sourceRange, layerMappings) => {
   // given a source range, eg. 79..93
-  // and a layer mapping, eg.
-  // [
-  // { sourceStart: 98, sourceEnd: 100, destStart: 50, destEnd: 52 },
-  // { sourceStart: 50, sourceEnd: 98, destStart: 52, destEnd: 100 }
-  // ],
-  // create a new set of destinationRanges,
-  // chunked into valid ranges from layer mappings, and from original unmapped i=i ranges
+  // and a layer mapping, eg. [ { sourceStart: 98, sourceEnd: 100, destStart: 50, destEnd: 52 }, { sourceStart: 50, sourceEnd: 98, destStart: 52, destEnd: 100 } ],
+  // create a new set of "destinationRanges" chunked into valid ranges from layer mappings, and from original unmapped i=i ranges
+  // these mappings are always adjacent - so there won't be a gap between 2 applicable mappings for a source range which means no re-stitching of i=i mappings, yippee
 
-  // these mappings are always adjacent - so there won't be a gap between 2 applicable mappings for a source range - yippee
   const applicableMappings = layerMappings.filter((layerMapping) =>
     sourceRange.start <= layerMapping.sourceEnd && sourceRange.end >= layerMapping.sourceStart
   )
@@ -71,13 +64,12 @@ const destinationRanges = (sourceRange, layerMappings) => {
   }
 }
 
-const seedChunks = []
 let minStartRangesForChunks = []
 while (seeds.length) {
   const start = seeds.shift();
   const range = seeds.shift();
   let inputRanges = [{ start, end: start + range }]
-  for (const layer of layers) {
+  for (const layer of layerMappings) {
     let newInputRanges = []
     for (const inputRange of inputRanges) {
       newInputRanges.push(destinationRanges(inputRange, layer))
